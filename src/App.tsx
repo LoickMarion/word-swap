@@ -11,9 +11,12 @@ import { NewGameButton } from './components/NewGameButton';
 import { ResetButton } from './components/ResetButton';
 import { RevealSolutionButton } from './components/RevealSolutionButton';
 import { SolutionReveal } from './components/SolutionReveal';
+import { HintButton } from './components/HintButton';
+import { HintReveal } from './components/HintReveal';
 import { ModeToggle } from './components/ModeToggle';
 import { DailyDatePicker } from './components/DailyDatePicker';
 import { DAILY_MIN_DATE, getTodayDateString, validateDailyDate } from './lib/dailyDate';
+import { getHintWords } from './lib/hint';
 
 const DATE_ERROR_MESSAGES = {
   future: "You can't select a future date.",
@@ -34,6 +37,13 @@ function Game({ wordData }: { wordData: WordData }) {
   if (state.puzzle !== lastPuzzle) {
     setLastPuzzle(state.puzzle);
     setShowSolution(false);
+  }
+
+  const [showHint, setShowHint] = useState(false);
+  const [lastCurrentWord, setLastCurrentWord] = useState(currentWord);
+  if (currentWord !== lastCurrentWord) {
+    setLastCurrentWord(currentWord);
+    setShowHint(false);
   }
 
   function handleModeChange(nextMode: GameMode) {
@@ -79,10 +89,16 @@ function Game({ wordData }: { wordData: WordData }) {
 
       <div className="flex flex-wrap items-center justify-center gap-2">
         <ResetButton onClick={reset} disabled={state.path.length <= 1} />
+        {state.status === 'playing' && (
+          <HintButton revealed={showHint} onClick={() => setShowHint((v) => !v)} />
+        )}
         <RevealSolutionButton revealed={showSolution} onClick={() => setShowSolution((v) => !v)} />
         {mode === 'random' && <NewGameButton onClick={newGame} />}
       </div>
 
+      {showHint && (
+        <HintReveal words={getHintWords(currentWord, state.puzzle.goal, wordData.index, 3)} />
+      )}
       {showSolution && <SolutionReveal path={state.puzzle.shortestPathWords} />}
     </div>
   );

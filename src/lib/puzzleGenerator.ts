@@ -17,6 +17,11 @@ const WALKS_PER_ATTEMPT = 10;
 const MAX_WALK_ATTEMPTS = 10;
 const MAX_START_ATTEMPTS = 20;
 
+// Puzzles with a shortest path shorter than this feel trivial (solved in one
+// or two guesses), so candidates below the floor are skipped in favor of the
+// next-best-scoring one.
+export const MIN_PATH_LENGTH = 3;
+
 function pickRandom<T>(items: T[], rng: Rng): T {
   return items[Math.floor(rng() * items.length)];
 }
@@ -47,7 +52,12 @@ export function randomWalk(start: string, steps: number, index: WordIndex, rng: 
   return visited;
 }
 
-export function generatePuzzle(commonWords: string[], index: WordIndex, rng: Rng): Puzzle {
+export function generatePuzzle(
+  commonWords: string[],
+  index: WordIndex,
+  rng: Rng,
+  minPathLength: number = MIN_PATH_LENGTH,
+): Puzzle {
   const commonWordsSet = new Set(commonWords);
 
   for (let startAttempt = 0; startAttempt < MAX_START_ATTEMPTS; startAttempt++) {
@@ -63,27 +73,21 @@ export function generatePuzzle(commonWords: string[], index: WordIndex, rng: Rng
       }
       visited.delete(start);
 
-      const candidates = [...visited].filter((word) => commonWordsSet.has(word));
-      if (candidates.length === 0) continue;
+      const candidates = [...visited]
+        .filter((word) => commonWordsSet.has(word))
+        .map((word) => ({ word, score: letterDifference(start, word), tiebreak: rng() }))
+        .sort((a, b) => b.score - a.score || b.tiebreak - a.tiebreak);
 
-      let bestGoal = candidates[0];
-      let bestScore = letterDifference(start, bestGoal);
-      for (const candidate of candidates.slice(1)) {
-        const score = letterDifference(start, candidate);
-        if (score > bestScore || (score === bestScore && rng() < 0.5)) {
-          bestGoal = candidate;
-          bestScore = score;
+      for (const { word: candidateGoal } of candidates) {
+        const path = shortestPath(start, candidateGoal, index);
+        if (path && path.length - 1 >= minPathLength) {
+          return {
+            start,
+            goal: candidateGoal,
+            shortestPathWords: path,
+            shortestLength: path.length - 1,
+          };
         }
-      }
-
-      const path = shortestPath(start, bestGoal, index);
-      if (path) {
-        return {
-          start,
-          goal: bestGoal,
-          shortestPathWords: path,
-          shortestLength: path.length - 1,
-        };
       }
     }
   }
