@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ThemeProvider } from './theme/ThemeContext';
 import { ThemeToggle } from './components/ThemeToggle';
 import { useWordData, type WordData } from './hooks/useWordData';
@@ -9,6 +9,7 @@ import { PathTrail } from './components/PathTrail';
 import { ResultSummary } from './components/ResultSummary';
 import { NewGameButton } from './components/NewGameButton';
 import { ResetButton } from './components/ResetButton';
+import { UndoButton } from './components/UndoButton';
 import { RevealSolutionButton } from './components/RevealSolutionButton';
 import { SolutionReveal } from './components/SolutionReveal';
 import { HintButton } from './components/HintButton';
@@ -17,6 +18,11 @@ import { ModeToggle } from './components/ModeToggle';
 import { DailyDatePicker } from './components/DailyDatePicker';
 import { DAILY_MIN_DATE, getTodayDateString, validateDailyDate } from './lib/dailyDate';
 import { getHintWords } from './lib/hint';
+import { shortestPaths } from './lib/bfs';
+
+const DAILY_SOLUTION_CAP = 5;
+
+type DailySolutions = { status: 'pending' } | { status: 'ready'; paths: string[][]; hasMore: boolean };
 
 const DATE_ERROR_MESSAGES = {
   future: "You can't select a future date.",
@@ -29,15 +35,34 @@ function Game({ wordData }: { wordData: WordData }) {
   const [dailyDate, setDailyDate] = useState(today);
   const [dateError, setDateError] = useState<string | null>(null);
 
-  const { state, newGame, submitWord, clearError, reset } = useGame(wordData, mode, dailyDate);
+  const { state, newGame, submitWord, clearError, reset, undo } = useGame(wordData, mode, dailyDate);
   const currentWord = state.path[state.path.length - 1];
 
   const [showSolution, setShowSolution] = useState(false);
+  const [dailySolutions, setDailySolutions] = useState<DailySolutions>({ status: 'pending' });
   const [lastPuzzle, setLastPuzzle] = useState(state.puzzle);
   if (state.puzzle !== lastPuzzle) {
     setLastPuzzle(state.puzzle);
     setShowSolution(false);
+    setDailySolutions({ status: 'pending' });
   }
+
+  // Precompute the daily puzzle's alternate solutions in the background as
+  // soon as the puzzle is known, so Reveal Solution is instant once clicked.
+  // Random mode skips this entirely and just shows the single BFS path
+  // already computed at generation time - no search needed.
+  useEffect(() => {
+    if (mode !== 'daily' || dailySolutions.status !== 'pending') return;
+    const id = setTimeout(() => {
+      const found = shortestPaths(state.puzzle.start, state.puzzle.goal, wordData.index, DAILY_SOLUTION_CAP + 1);
+      setDailySolutions({
+        status: 'ready',
+        paths: found.slice(0, DAILY_SOLUTION_CAP),
+        hasMore: found.length > DAILY_SOLUTION_CAP,
+      });
+    }, 0);
+    return () => clearTimeout(id);
+  }, [mode, dailySolutions.status, state.puzzle, wordData.index]);
 
   const [showHint, setShowHint] = useState(false);
   const [lastCurrentWord, setLastCurrentWord] = useState(currentWord);
@@ -88,6 +113,7 @@ function Game({ wordData }: { wordData: WordData }) {
       <PathTrail path={state.path} />
 
       <div className="flex flex-wrap items-center justify-center gap-2">
+        <UndoButton onClick={undo} disabled={state.status !== 'playing' || state.path.length <= 1} />
         <ResetButton onClick={reset} disabled={state.path.length <= 1} />
         {state.status === 'playing' && (
           <HintButton revealed={showHint} onClick={() => setShowHint((v) => !v)} />
@@ -99,7 +125,14 @@ function Game({ wordData }: { wordData: WordData }) {
       {showHint && (
         <HintReveal words={getHintWords(currentWord, state.puzzle.goal, wordData.index, 3)} />
       )}
-      {showSolution && <SolutionReveal path={state.puzzle.shortestPathWords} />}
+      {showSolution &&
+        (mode === 'random' ? (
+          <SolutionReveal paths={[state.puzzle.shortestPathWords]} hasMore={false} verified={false} />
+        ) : dailySolutions.status === 'ready' ? (
+          <SolutionReveal paths={dailySolutions.paths} hasMore={dailySolutions.hasMore} verified />
+        ) : (
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Finding solutions…</p>
+        ))}
     </div>
   );
 }

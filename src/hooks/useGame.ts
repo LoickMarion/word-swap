@@ -17,6 +17,7 @@ interface GameState {
 type GameAction =
   | { type: 'NEW_GAME'; puzzle: Puzzle }
   | { type: 'RESET' }
+  | { type: 'UNDO' }
   | { type: 'SUBMIT_WORD'; word: string; wordData: WordData }
   | { type: 'CLEAR_ERROR' };
 
@@ -48,6 +49,11 @@ function reducer(state: GameState, action: GameAction): GameState {
 
     case 'RESET':
       return { ...state, path: [state.puzzle.start], status: 'playing', error: null };
+
+    case 'UNDO': {
+      if (state.status !== 'playing' || state.path.length <= 1) return state;
+      return { ...state, path: state.path.slice(0, -1), error: null };
+    }
 
     case 'CLEAR_ERROR':
       return { ...state, error: null };
@@ -96,5 +102,7 @@ export function useGame(wordData: WordData, mode: GameMode, dailyDate: string) {
 
   const reset = useCallback(() => dispatch({ type: 'RESET' }), []);
 
-  return { state, newGame, submitWord, clearError, reset };
+  const undo = useCallback(() => dispatch({ type: 'UNDO' }), []);
+
+  return { state, newGame, submitWord, clearError, reset, undo };
 }
