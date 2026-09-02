@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { WordData } from './useWordData';
 import { generatePuzzle, type Puzzle } from '../lib/puzzleGenerator';
 import { validateMove, type MoveInvalidReason } from '../lib/moveValidation';
@@ -87,9 +87,25 @@ export function useGame(wordData: WordData, mode: GameMode, dailyDate: string) {
     dispatch({ type: 'NEW_GAME', puzzle: generatePuzzleForMode(wordData, mode, dailyDate) });
   }, [wordData, mode, dailyDate]);
 
+  // Random mode: keep the *next* puzzle pre-generated in the background so
+  // clicking "New Game" swaps instantly instead of blocking on generation.
+  const [nextRandomPuzzle, setNextRandomPuzzle] = useState<Puzzle | null>(null);
+  useEffect(() => {
+    if (mode !== 'random' || nextRandomPuzzle) return;
+    const id = setTimeout(() => {
+      setNextRandomPuzzle(generatePuzzle(wordData.commonWords, wordData.index, Math.random));
+    }, 0);
+    return () => clearTimeout(id);
+  }, [mode, nextRandomPuzzle, wordData]);
+
   const newGame = useCallback(() => {
-    dispatch({ type: 'NEW_GAME', puzzle: generatePuzzle(wordData.commonWords, wordData.index, Math.random) });
-  }, [wordData]);
+    if (nextRandomPuzzle) {
+      dispatch({ type: 'NEW_GAME', puzzle: nextRandomPuzzle });
+      setNextRandomPuzzle(null); // triggers the effect above to prefetch the following one
+    } else {
+      dispatch({ type: 'NEW_GAME', puzzle: generatePuzzle(wordData.commonWords, wordData.index, Math.random) });
+    }
+  }, [wordData, nextRandomPuzzle]);
 
   const submitWord = useCallback(
     (word: string) => {
